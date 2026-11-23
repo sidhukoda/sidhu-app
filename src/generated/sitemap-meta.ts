@@ -1,0 +1,3 @@
+/** Written by `npm run sitemap:build`. Fallback values keep typecheck working before a generate. */
+export const SITEMAP_URL_COUNT = 1326;
+export const SITEMAP_SHARD_COUNT = 10;

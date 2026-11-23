@@ -1,0 +1,63 @@
+import { Section } from "@/components/ui/Section";
+import { ServiceCard } from "@/components/ui/ServiceCard";
+import { PageHero } from "@/components/layout/PageHero";
+import { PagePhotoStrip } from "@/components/layout/PagePhotoStrip";
+import { routes } from "@/config/routes";
+import { getPrimaryServicePhoto, getInterleavedPhotos } from "@/config/photo-catalog";
+import { buildPageMetadata } from "@/lib/metadata";
+import { getActiveServices } from "@/lib/queries";
+import { serviceCardDescription } from "@/lib/search-snippets";
+
+export const revalidate = 86400;
+
+export const metadata = buildPageMetadata({
+  title: "Invisible Grills, Safety Nets and Home Fittings",
+  description:
+    "Compare invisible grills, safety nets, mosquito nets, cloth hangers, sports nets, and bird protection. Each service page explains materials, fitting, and how to request a written quote.",
+  path: "/services",
+});
+
+export default async function ServicesIndexPage() {
+  const services = await getActiveServices();
+  const photos = getInterleavedPhotos(12);
+
+  return (
+    <>
+      <PageHero
+        eyebrow="Installation services"
+        title="Invisible grills, safety nets, and home fittings"
+        description="Measured installation of invisible grills, safety nets, mosquito nets, cloth hangers, sports nets, and bird protection across served Chhattisgarh towns, with Raipur listed first."
+        photo={photos[0]}
+        breadcrumbs={[
+          { label: "Home", href: routes.home },
+          { label: "Services" },
+        ]}
+      />
+      <Section>
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {services.map((service) => {
+            const photo = getPrimaryServicePhoto(service.slug);
+            return (
+              <ServiceCard
+                key={service.id}
+                name={service.name}
+                slug={service.slug}
+                description={serviceCardDescription(service)}
+                imageSlug={service.imageSlug}
+                photoSrc={photo?.src}
+                photoAlt={photo?.alt}
+                href={routes.service(service.slug)}
+              />
+            );
+          })}
+        </div>
+      </Section>
+      <PagePhotoStrip
+        photos={photos}
+        heading="Complete photo catalog of services"
+        description="Every major offering with a high-definition installation photograph."
+        columns={4}
+      />
+    </>
+  );
+}

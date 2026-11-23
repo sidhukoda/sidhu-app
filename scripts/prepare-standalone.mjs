@@ -1,0 +1,189 @@
+/**
+ * After `next build`, assemble a runtime-only standalone tree.
+ * Copies public + hashed CSS/JS. Strips source maps. Skips non-runtime files.
+ */
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+const standaloneDir = path.join(root, ".next", "standalone");
+const staticDir = path.join(root, ".next", "static");
+const publicDir = path.join(root, "public");
+
+const SKIP_PUBLIC_NAMES = new Set([
+  ".DS_Store",
+  "Thumbs.db",
+  "desktop.ini",
+]);
+
+const SKIP_PUBLIC_EXT = new Set([
+  ".map",
+  ".md",
+  ".psd",
+  ".ai",
+  ".sketch",
+  ".mp4",
+  ".mov",
+  ".webm",
+]);
+
+if (!fs.existsSync(standaloneDir)) {
+  console.error("Missing .next/standalone — run next build first.");
+  process.exit(1);
+}
+
+/** Next 15 may emit `.next/standalone/server.js` or `.next/standalone/<folder>/server.js`. */
+function findStandaloneApp(dir) {
+  const direct = path.join(dir, "server.js");
+  if (fs.existsSync(direct)) return dir;
+  for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!ent.isDirectory() || ent.name === "node_modules" || ent.name === ".next") continue;
+    const nested = path.join(dir, ent.name);
+    if (fs.existsSync(path.join(nested, "server.js"))) return nested;
+  }
+  return null;
+}
+
+const appDir = findStandaloneApp(standaloneDir);
+if (!appDir) {
+  console.error("Missing standalone server.js — next build did not emit a runnable app.");
+  process.exit(1);
+}
+console.log(`Standalone app: ${path.relative(root, appDir)}`);
+
+function shouldCopyPublic(name) {
+  if (SKIP_PUBLIC_NAMES.has(name)) return false;
+  const ext = path.extname(name).toLowerCase();
+  return !SKIP_PUBLIC_EXT.has(ext);
+}
+
+function copyPublicFiltered(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const ent of fs.readdirSync(src, { withFileTypes: true })) {
+    if (!shouldCopyPublic(ent.name)) continue;
+    const from = path.join(src, ent.name);
+    const to = path.join(dest, ent.name);
+    if (ent.isDirectory()) copyPublicFiltered(from, to);
+    else fs.copyFileSync(from, to);
+  }
+}
+
+function stripSourceMaps(dir) {
+  if (!fs.existsSync(dir)) return 0;
+  let removed = 0;
+  const stack = [dir];
+  while (stack.length) {
+    const current = stack.pop();
+    if (!current) continue;
+    let entries;
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const ent of entries) {
+      const full = path.join(current, ent.name);
+      if (ent.isDirectory()) {
+        stack.push(full);
+      } else if (ent.name.endsWith(".map")) {
+        fs.rmSync(full, { force: true });
+        removed += 1;
+      }
+    }
+  }
+  return removed;
+}
+
+const standalonePublic = path.join(appDir, "public");
+const standaloneStatic = path.join(appDir, ".next", "static");
+
+if (fs.existsSync(publicDir)) {
+  if (fs.existsSync(standalonePublic)) {
+    fs.rmSync(standalonePublic, { recursive: true, force: true });
+  }
+  copyPublicFiltered(publicDir, standalonePublic);
+  console.log("Copied public/ → standalone public/ (runtime assets only)");
+}
+
+const sitemapIndex = path.join(standalonePublic, "sitemap.xml");
+if (!fs.existsSync(sitemapIndex)) {
+  console.error("FATAL: public/sitemap.xml missing — run sitemap:build before next build.");
+  process.exit(1);
+}
+const sitemapIndexXml = fs.readFileSync(sitemapIndex, "utf8");
+if (!sitemapIndexXml.includes("<sitemapindex") || sitemapIndexXml.includes("<urlset")) {
+  console.error("FATAL: public/sitemap.xml must be a sitemap index of child urlsets.");
+  process.exit(1);
+}
+const childNames = [...sitemapIndexXml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => {
+  const loc = match[1];
+  return loc.slice(loc.lastIndexOf("/") + 1);
+});
+if (childNames.length === 0) {
+  console.error("FATAL: sitemap index lists no child sitemaps.");
+  process.exit(1);
+}
+for (const name of childNames) {
+  const childPath = path.join(standalonePublic, name);
+  if (!fs.existsSync(childPath)) {
+    console.error(`FATAL: index lists ${name} but standalone public/${name} is missing.`);
+    process.exit(1);
+  }
+  const childXml = fs.readFileSync(childPath, "utf8");
+  if (!childXml.includes("<urlset") || childXml.includes("<sitemapindex")) {
+    console.error(`FATAL: ${name} must be a urlset, not a nested index.`);
+    process.exit(1);
+  }
+}
+console.log(`Standalone public includes sitemap.xml index + ${childNames.length} child urlset(s)`);
+
+const faviconFile = path.join(standalonePublic, "favicon.png");
+if (!fs.existsSync(faviconFile)) {
+  console.error("FATAL: public/favicon.png missing from standalone public/.");
+  process.exit(1);
+}
+console.log("Standalone public includes favicon.png");
+
+if (fs.existsSync(staticDir)) {
+  fs.mkdirSync(path.dirname(standaloneStatic), { recursive: true });
+  fs.cpSync(staticDir, standaloneStatic, { recursive: true });
+  console.log("Copied .next/static → .next/standalone/.next/static/");
+}
+
+function copyDirMerge(src, dest) {
+  if (!fs.existsSync(src)) return false;
+  fs.mkdirSync(dest, { recursive: true });
+  fs.cpSync(src, dest, { recursive: true });
+  return true;
+}
+
+const nextSrc = path.join(root, "node_modules", "next", "dist");
+const nextDest = path.join(appDir, "node_modules", "next", "dist");
+for (const part of ["server", "shared", "lib", "compiled"]) {
+  const from = path.join(nextSrc, part);
+  const to = path.join(nextDest, part);
+  if (copyDirMerge(from, to)) {
+    console.log(`Synced next/dist/${part} into standalone`);
+  }
+}
+
+const nextServerJs = path.join(nextDest, "server", "next-server.js");
+const imageOptimizerJs = path.join(nextDest, "server", "image-optimizer.js");
+if (fs.existsSync(nextServerJs)) {
+  const nextServerSrc = fs.readFileSync(nextServerJs, "utf8");
+  if (nextServerSrc.includes("./image-optimizer") && !fs.existsSync(imageOptimizerJs)) {
+    console.error("FATAL: next-server.js requires ./image-optimizer but the file is missing.");
+    process.exit(1);
+  }
+}
+
+const maps = stripSourceMaps(standaloneDir);
+if (maps) console.log(`Removed ${maps} source map file(s) from standalone`);
+
+if (!fs.existsSync(path.join(appDir, "server.js"))) {
+  console.error("FATAL: standalone server.js still missing after prepare.");
+  process.exit(1);
+}
+
+console.log("Standalone bundle ready for PM2.");

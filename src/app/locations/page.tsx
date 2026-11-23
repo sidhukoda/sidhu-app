@@ -1,0 +1,78 @@
+import { Section } from "@/components/ui/Section";
+import Link from "next/link";
+import Image from "next/image";
+import { PageHero } from "@/components/layout/PageHero";
+import { PagePhotoStrip } from "@/components/layout/PagePhotoStrip";
+import { routes } from "@/config/routes";
+import { getHdPhoto, getHdPhotoSet, getInterleavedPhotos } from "@/config/photo-catalog";
+import { buildPageMetadata } from "@/lib/metadata";
+import { getActiveCities } from "@/lib/queries";
+
+export const revalidate = 86400;
+
+export const metadata = buildPageMetadata({
+  title: "Chhattisgarh Service Areas | Raipur Listed First",
+  description:
+    "Find your town: Raipur first, then Bhilai, Durg, Bilaspur, Korba, and every other listed Chhattisgarh service area. Each town page links to measured installation quotes.",
+  path: "/locations",
+});
+
+export default async function LocationsIndexPage() {
+  const cities = await getActiveCities();
+  const photos = getInterleavedPhotos(12);
+  const cityPhotos = getHdPhotoSet(5);
+
+  return (
+    <>
+      <PageHero
+        eyebrow="Service cities"
+        title="Chhattisgarh service areas"
+        description="Chhattisgarh only. Raipur is listed first, then every other served town in the state."
+        photo={getHdPhoto("safety-nets")}
+        breadcrumbs={[
+          { label: "Home", href: routes.home },
+          { label: "Locations" },
+        ]}
+      />
+      <Section>
+        <div className="grid gap-6 md:grid-cols-2">
+          {cities.map((city, index) => {
+            const photo = cityPhotos[index] ?? photos[index] ?? photos[0];
+            return (
+              <Link
+                key={city.slug}
+                href={city.slug === "chhattisgarh" ? "/chhattisgarh" : routes.city(city.slug)}
+                className="group overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-card transition hover:border-accent-500"
+              >
+                {photo && (
+                  <div className="relative aspect-[16/9] overflow-hidden bg-neutral-100">
+                    <Image
+                      src={photo.src}
+                      alt={photo.alt}
+                      fill
+                      sizes="(max-width: 768px) 100vw, 50vw"
+                      quality={85}
+                      className="object-cover transition duration-300 group-hover:scale-105"
+                    />
+                  </div>
+                )}
+                <div className="p-8">
+                  <h2 className="text-2xl font-bold text-neutral-900">{city.name}</h2>
+                  <p className="mt-3 text-neutral-600">
+                    {city.description ??
+                      `Professional invisible grills and safety solutions in ${city.name}.`}
+                  </p>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      </Section>
+      <PagePhotoStrip
+        photos={photos.slice(0, 8)}
+        heading="Installations across our cities"
+        columns={4}
+      />
+    </>
+  );
+}

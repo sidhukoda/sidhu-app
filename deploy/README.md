@@ -1,0 +1,148 @@
+# PM2 + standalone Node (no Docker)
+
+Deploy **SafeShield Solutions** on Ubuntu 24.04 + PM2 + nginx. After prune, expect **~80–150 MB** runtime per site (not Docker’s ~1 GB image).
+
+## Requirements
+
+- Node.js **≥ 18.18**
+- [PM2](https://pm2.keymetrics.io/) (`npm i -g pm2`)
+- nginx (TLS termination)
+
+## One-time server setup
+
+```bash
+cd /var/www/safeshield   # your git clone
+cp .env.example .env      # set NEXT_PUBLIC_SITE_URL=https://safeshieldsolutions.in
+npm ci
+```
+
+## Build
+
+Raipur and other high-priority pages are pre-rendered. Remaining valid URLs generate on first request (ISR, `revalidate: 86400`) and stay indexable.
+
+```bash
+npm run deploy:prod    # npm ci + build + standalone + prune
+```
+
+`prepare-standalone` copies runtime `public/` + `.next/static` into `.next/standalone/` and strips `.map` files. `deploy:prune` then removes `node_modules` and leftover `.next/*` except `standalone/`.
+
+This VPS **cannot run `npm`** (kernel SIGKILL). Do not run `npm install`, `npm ci`, or `next build` on the server.
+
+### Fast path (recommended): prebuilt standalone
+
+Build on your PC, upload the tarball, install on the VPS.
+
+**On Windows (project folder):**
+
+```powershell
+npm run build
+tar -czf safeshield-standalone.tar.gz -C .next standalone
+```
+
+Upload `safeshield-standalone.tar.gz` to `/root/` on the VPS (Hostinger File Manager or SCP).
+
+**On the VPS:**
+
+```bash
+cd /root/safeshieldsolutions
+git fetch origin && git reset --hard origin/main
+bash deploy/vps-install-standalone.sh /root/safeshieldsolutions /root/safeshield-standalone.tar.gz
+```
+
+That extracts `.next/standalone`, starts PM2 on port **3010**, and refreshes nginx sitemaps. No npm.
+
+### Sitemap-only publish (already live without Node)
+
+Sitemap XML is committed in `public/` and served by nginx:
+
+```bash
+bash deploy/vps-run.sh /root/safeshieldsolutions
+```
+
+### Do not
+
+- `pgrep -f safeshieldsolutions | xargs kill` during deploy
+- `npm install` / `npm ci` / `next build` on this VPS
+- Delete `.next/standalone` unless you have a new tarball ready
+
+`git pull` alone does **not** update HTML pages. PM2 serves `.next/standalone/server.js`.
+
+## Run with PM2
+
+From project root (ecosystem `cwd` points at `.next/standalone`):
+
+```bash
+pm2 start deploy/ecosystem.config.cjs
+pm2 save
+pm2 startup   # follow printed command for boot persistence
+```
+
+Default port: **3010**. App listens on `0.0.0.0`.
+
+```bash
+pm2 logs safeshield-solutions
+pm2 restart safeshield-solutions
+```
+
+## Multiple sites on one VPS
+
+Duplicate an entry in `deploy/ecosystem.config.cjs`:
+
+| Site | `cwd` | `PORT` |
+|------|--------|--------|
+| safeshieldsolutions.in | `/var/www/safeshield/.next/standalone` | 3010 |
+| other-domain.in | `/var/www/other/.next/standalone` | 3001 |
+
+Point each nginx `server` block at the matching `127.0.0.1:PORT`.
+
+## nginx
+
+Copy the vhost into **sites-available** (do not symlink a missing `/var/www/safeshield` path):
+
+```bash
+# from the real clone, e.g. /root/safeshieldsolutions
+bash deploy/install-nginx.sh
+```
+
+If **safeshieldsolutions.in opens Deva Safety Nets** or curl says the SSL name does not match, there is no Let's Encrypt cert for this domain yet, so SNI falls through to another site. After the HTTP vhost is live:
+
+```bash
+mkdir -p /var/www/certbot
+certbot certonly --webroot -w /var/www/certbot \
+  -d safeshieldsolutions.in -d www.safeshieldsolutions.in
+bash deploy/install-nginx.sh
+curl -sIk https://safeshieldsolutions.in | grep -i x-site-brand
+# must include: X-Site-Brand: SafeShield-Solutions
+```
+
+Do **not** mark this server block `default_server` on a multi-site VPS.
+
+## Environment
+
+| Variable | Purpose |
+|----------|---------|
+| `NEXT_PUBLIC_SITE_URL` | Canonical URL (sitemap, OG) |
+| `NEXT_PUBLIC_SITE_NAME` | SafeShield Solutions |
+| `PORT` | PM2 / standalone server port |
+| `HOSTNAME` | Set `0.0.0.0` behind nginx |
+| `NEXT_BUILD_STATIC_SERVICES` | Max service pages to SSG at build (0 = none) |
+| `NEXT_BUILD_STATIC_CITY_SAMPLES` | Max sample city/area paths at build (0 = none) |
+
+## Verify
+
+```bash
+curl -I http://127.0.0.1:3010/
+curl -sI http://127.0.0.1:3010/sitemap.xml | head
+curl -sI https://safeshieldsolutions.in/sitemap.xml | head
+# Expect HTTP 200 and Content-Type: application/xml
+npm run pages:count
+```
+
+## Storage & disk
+
+See **[deploy/STORAGE.md](./STORAGE.md)** for sizes, ISR cache, and cleanup.
+
+```bash
+npm run storage:report   # folder sizes
+npm run deploy:prune     # after build: remove node_modules + .next except standalone
+```

@@ -1,0 +1,62 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# testing
+/coverage
+/playwright-report
+/test-results
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+
+# production
+/build
+/deploy/dist/
+*.tar.gz
+safeshield-standalone.tar.gz
+
+# misc
+.DS_Store
+*.pem
+Thumbs.db
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# env files
+.env
+.env*.local
+
+# source photo dumps (runtime assets live in public/)
+/images/
+
+# prisma
+prisma/*.db
+prisma/*.db-journal
+
+# reports
+/reports/*.json
+/reports/*.csv
+!/reports/.gitkeep
+
+# gzip copies of sitemaps (XML is committed so the VPS can publish without npm)
+/public/sitemap.xml.gz
+/public/sitemap-*.xml.gz
+
+# typescript
+*.tsbuildinfo
+
+# enquiry log written by /api/quote
+/.data
+
+# IDE
+.idea
+.vscode/*
+!.vscode/extensions.json

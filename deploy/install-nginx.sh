@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# Install nginx vhost for safeshieldsolutions.in into /etc/nginx/sites-available
+# (copy, not a symlink into the git tree — that broke when /var/www/safeshield was missing).
+#
+# Usage (from the project root, as root):
+#   bash deploy/install-nginx.sh
+#   bash deploy/install-nginx.sh /root/safeshieldsolutions
+set -euo pipefail
+
+ROOT="${1:-}"
+if [ -z "$ROOT" ]; then
+  ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+fi
+
+AVAILABLE="/etc/nginx/sites-available/safeshieldsolutions"
+ENABLED="/etc/nginx/sites-enabled/safeshieldsolutions"
+CERT="/etc/letsencrypt/live/safeshieldsolutions.in/fullchain.pem"
+
+echo "==> Project root: $ROOT"
+
+if [ ! -d "$ROOT/deploy" ]; then
+  echo "ERROR: $ROOT/deploy not found. Pass the real clone path:"
+  echo "  bash deploy/install-nginx.sh /root/safeshieldsolutions"
+  exit 1
+fi
+
+mkdir -p /var/www/certbot /var/www/safeshield-sitemaps /etc/nginx/sites-available /etc/nginx/sites-enabled
+
+# nginx www-data cannot read /root — copy sitemap XML to a public web dir.
+rm -f /var/www/safeshield-sitemaps/sitemap*.xml /var/www/safeshield-sitemaps/sitemap*.xml.gz
+copied=0
+for src in \
+  "$ROOT/public" \
+  "$ROOT/.next/standalone/safeshieldsolutions/public" \
+  "$ROOT/.next/standalone/public"
+do
+  if [ -f "$src/sitemap.xml" ]; then
+    cp -a "$src"/sitemap*.xml /var/www/safeshield-sitemaps/
+    copied=1
+    echo "==> Copied sitemaps from $src → /var/www/safeshield-sitemaps"
+    break
+  fi
+done
+if [ "$copied" -eq 0 ]; then
+  echo "WARN: no sitemap.xml found to copy. Google cannot fetch until XML exists in /var/www/safeshield-sitemaps"
+fi
+
+# Circle logo for /favicon.png, /favicon.ico, and /icon.png.
+icon_copied=0
+for src in \
+  "$ROOT/public/favicon.png" \
+  "$ROOT/.next/standalone/safeshieldsolutions/public/favicon.png" \
+  "$ROOT/.next/standalone/public/favicon.png" \
+  "$ROOT/src/app/icon.png"
+do
+  if [ -f "$src" ]; then
+    cp -a "$src" /var/www/safeshield-sitemaps/favicon.png
+    icon_copied=1
+    echo "==> Copied favicon from $src → /var/www/safeshield-sitemaps/favicon.png"
+    break
+  fi
+done
+if [ "$icon_copied" -eq 0 ]; then
+  echo "WARN: favicon.png missing. /favicon.png will 404 until public/favicon.png exists."
+fi
+# sitemap.xml is a sitemap index of named child urlsets. Do not copy it onto
+# sitemap-1.xml … sitemap-9.xml — those would be competing indexes.
+# Next still 301s /sitemap-1.xml → /sitemap.xml for the old Search Console submission.
+if [ -f /var/www/safeshield-sitemaps/sitemap.xml ] && grep -q "<sitemapindex" /var/www/safeshield-sitemaps/sitemap.xml; then
+  echo "==> sitemap.xml is an index of named child urlsets"
+  missing=0
+  while IFS= read -r loc; do
+    name="${loc##*/}"
+    if [ ! -f "/var/www/safeshield-sitemaps/${name}" ]; then
+      echo "WARN: index lists ${name} but the file is missing"
+      missing=1
+    fi
+  done < <(grep -oE 'https://[^<]+/sitemap-[a-z0-9-]+\.xml' /var/www/safeshield-sitemaps/sitemap.xml | sort -u)
+  if [ "$missing" -eq 0 ]; then
+    echo "==> All child sitemaps listed in the index are present"
+  fi
+fi
+chmod -R a+rX /var/www/safeshield-sitemaps
+
+# Drop broken symlinks that made nginx -t fail with "No such file or directory"
+rm -f "$ENABLED" /etc/nginx/sites-enabled/safeshield
+
+if [ -f "$CERT" ]; then
+  SRC="$ROOT/deploy/nginx-safeshield.conf"
+  echo "==> TLS cert found — installing HTTPS vhost"
+else
+  SRC="$ROOT/deploy/nginx-safeshield-http.conf"
+  echo "==> No TLS cert yet — installing HTTP vhost (required for certbot)"
+fi
+
+cp -f "$SRC" "$AVAILABLE"
+ln -sfn "$AVAILABLE" "$ENABLED"
+
+echo "==> nginx -t"
+nginx -t
+
+systemctl reload nginx
+echo "==> nginx reloaded"
+
+if [ ! -f "$CERT" ]; then
+  echo
+  echo "Next: issue a certificate so HTTPS is not another brand's cert:"
+  echo "  mkdir -p /var/www/certbot"
+  echo "  certbot certonly --webroot -w /var/www/certbot -d safeshieldsolutions.in -d www.safeshieldsolutions.in"
+  echo "  bash $ROOT/deploy/install-nginx.sh $ROOT"
+  echo
+  echo "Or let certbot edit nginx:"
+  echo "  certbot --nginx -d safeshieldsolutions.in -d www.safeshieldsolutions.in"
+fi
+
+echo
+echo "Checks:"
+echo "  curl -sI http://127.0.0.1:3010/ | head"
+echo "  curl -sI -H 'Host: safeshieldsolutions.in' http://127.0.0.1/ | grep -i x-site-brand"
+echo "  curl -sIk https://safeshieldsolutions.in | grep -i x-site-brand"
+echo "  curl -sI https://safeshieldsolutions.in/sitemap.xml | head"
+echo "  curl -sI https://safeshieldsolutions.in/favicon.png | head"
+echo "Expected: X-Site-Brand: SafeShield-Solutions, sitemap HTTP 200 application/xml, favicon HTTP 200 image/png"
