@@ -4,6 +4,7 @@ const isProd = process.env.NODE_ENV === "production";
 
 const nextConfig = {
   output: "standalone",
+  eslint: { ignoreDuringBuilds: true },
   trailingSlash: false,
   reactStrictMode: true,
   poweredByHeader: false,

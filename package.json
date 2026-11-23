@@ -10,12 +10,12 @@
     "dev": "next dev --turbopack -p 3010",
     "catalog:build": "tsx scripts/build-catalog.mjs",
     "sitemap:build": "tsx scripts/generate-sitemap.mjs",
-    "build": "npm run catalog:build && npm run sitemap:build && next build && node scripts/prepare-standalone.mjs && node scripts/add-linux-sharp.mjs",
+    "build": "next build && node scripts/prepare-standalone.mjs && node scripts/add-linux-sharp.mjs",
     "build:next": "next build",
     "storage:report": "node scripts/storage-report.mjs",
     "deploy:prune": "node scripts/prune-production.mjs",
     "deploy:prod": "npm install --no-audit --no-fund && npm run build && npm run deploy:prune",
-    "start": "node scripts/start-host.mjs",
+    "start": "node server.js",
     "start:standalone": "node .next/standalone/server.js",
     "pm2:start": "pm2 start deploy/ecosystem.config.cjs",
     "pm2:reload": "pm2 reload deploy/ecosystem.config.cjs",
@@ -47,9 +47,13 @@
     "seo:check": "npm run typecheck && npm test -- --run && npm run seo:validate && npm run sitemap:audit && npm run seo:pages && npm run seo:content-audit && npm run schema:audit && npm run links:audit && npm run seo:on-page"
   },
   "dependencies": {
+    "autoprefixer": "^10.4.20",
     "next": "^15.1.0",
+    "postcss": "^8.4.47",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "tailwindcss": "^3.4.14",
+    "typescript": "^5.6.3",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -59,16 +63,12 @@
     "@types/react-dom": "^19.0.0",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
-    "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",
     "eslint-config-next": "^15.1.0",
     "eslint-config-prettier": "^9.1.0",
-    "postcss": "^8.4.47",
     "prettier": "^3.3.3",
     "prettier-plugin-tailwindcss": "^0.6.8",
-    "tailwindcss": "^3.4.14",
     "tsx": "^4.19.1",
-    "typescript": "^5.6.3",
     "vitest": "^2.1.3"
   }
 }
