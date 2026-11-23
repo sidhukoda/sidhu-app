@@ -47,7 +47,7 @@
     "seo:check": "npm run typecheck && npm test -- --run && npm run seo:validate && npm run sitemap:audit && npm run seo:pages && npm run seo:content-audit && npm run schema:audit && npm run links:audit && npm run seo:on-page"
   },
   "dependencies": {
-    "next": "^15.1.0",
+    "next": "^15.5.28",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "zod": "^3.23.8"
